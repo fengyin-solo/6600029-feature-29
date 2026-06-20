@@ -13,7 +13,9 @@ export interface FlightPlan {
   waypoints: Waypoint[];
   totalDistance: number;
   estimatedTime: number;
-  batteryUsage: number;  // percentage
+  batteryUsage: number;
+  remainingBattery: number;
+  segments: FlightSegment[];
 }
 
 export interface NoFlyZone {
@@ -30,10 +32,30 @@ export interface TerrainPoint {
   elevation: number;
 }
 
+export interface FlightSegment {
+  index: number;
+  startWaypoint: Waypoint;
+  endWaypoint: Waypoint;
+  distance: number;
+  estimatedTime: number;
+  batteryUsage: number;
+  isHighConsumption: boolean;
+}
+
+export interface FlightStatsResult {
+  totalDistance: number;
+  estimatedTime: number;
+  batteryUsage: number;
+  segments: FlightSegment[];
+  remainingBattery: number;
+}
+
 export interface DroneConfig {
   maxAltitude: number;
   maxSpeed: number;
-  batteryCapacity: number;  // mAh
-  consumptionRate: number;  // mAh/min
-  safeDistance: number;     // meters from obstacles
+  batteryCapacity: number;
+  consumptionRate: number;
+  safeDistance: number;
+  lowBatteryThreshold: number;
+  highConsumptionThreshold: number;
 }

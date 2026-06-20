@@ -17,7 +17,6 @@ function draw() {
 
   ctx.clearRect(0, 0, W, H);
 
-  // Background
   ctx.fillStyle = '#1e293b';
   ctx.fillRect(0, 0, W, H);
 
@@ -30,7 +29,6 @@ function draw() {
     return;
   }
 
-  // Compute distances
   const distances: number[] = [0];
   for (let i = 1; i < profile.length; i++) {
     const dx = (profile[i].lng - profile[i - 1].lng) * 111000;
@@ -39,7 +37,6 @@ function draw() {
   }
   const maxDist = distances[distances.length - 1] || 1;
 
-  // Find altitude range
   let minAlt = Infinity;
   let maxAlt = -Infinity;
   for (const p of profile) {
@@ -53,7 +50,8 @@ function draw() {
   const toX = (d: number) => padding.left + (d / maxDist) * plotW;
   const toY = (a: number) => padding.top + plotH - ((a - minAlt) / altRange) * plotH;
 
-  // Draw terrain fill
+  const segments = store.flightSegments;
+
   ctx.beginPath();
   ctx.moveTo(toX(distances[0]), toY(profile[0].terrainElevation));
   for (let i = 1; i < profile.length; i++) {
@@ -68,7 +66,6 @@ function draw() {
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Draw safe distance gap (green shading)
   ctx.beginPath();
   ctx.moveTo(toX(distances[0]), toY(profile[0].terrainElevation));
   for (let i = 1; i < profile.length; i++) {
@@ -81,28 +78,50 @@ function draw() {
   ctx.fillStyle = 'rgba(34,197,94,0.1)';
   ctx.fill();
 
-  // Draw flight path
-  ctx.beginPath();
-  ctx.moveTo(toX(distances[0]), toY(profile[0].altitude));
   for (let i = 1; i < profile.length; i++) {
-    ctx.lineTo(toX(distances[i]), toY(profile[i].altitude));
-  }
-  ctx.strokeStyle = '#3b82f6';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+    const x1 = toX(distances[i - 1]);
+    const y1 = toY(profile[i - 1].altitude);
+    const x2 = toX(distances[i]);
+    const y2 = toY(profile[i].altitude);
 
-  // Draw waypoint dots
-  for (let i = 0; i < profile.length; i++) {
+    const seg = segments[i - 1];
+    const isHigh = seg?.isHighConsumption;
+
+    if (isHigh) {
+      const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+      gradient.addColorStop(0, '#f97316');
+      gradient.addColorStop(1, '#ef4444');
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 4;
+      ctx.shadowColor = '#f97316';
+      ctx.shadowBlur = 8;
+    } else {
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 0;
+    }
+
     ctx.beginPath();
-    ctx.arc(toX(distances[i]), toY(profile[i].altitude), 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#60a5fa';
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  for (let i = 0; i < profile.length; i++) {
+    const segBefore = segments[i - 1];
+    const segAfter = segments[i];
+    const isNearHigh = segBefore?.isHighConsumption || segAfter?.isHighConsumption;
+
+    ctx.beginPath();
+    ctx.arc(toX(distances[i]), toY(profile[i].altitude), isNearHigh ? 6 : 4, 0, Math.PI * 2);
+    ctx.fillStyle = isNearHigh ? '#f97316' : '#60a5fa';
     ctx.fill();
-    ctx.strokeStyle = '#1d4ed8';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = isNearHigh ? '#c2410c' : '#1d4ed8';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
   }
 
-  // Axes
   ctx.strokeStyle = '#475569';
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -111,7 +130,6 @@ function draw() {
   ctx.lineTo(padding.left + plotW, padding.top + plotH);
   ctx.stroke();
 
-  // X axis labels
   ctx.fillStyle = '#94a3b8';
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'center';
@@ -127,7 +145,6 @@ function draw() {
     ctx.stroke();
   }
 
-  // Y axis labels
   ctx.textAlign = 'right';
   const yTicks = 4;
   for (let i = 0; i <= yTicks; i++) {
@@ -141,20 +158,26 @@ function draw() {
     ctx.stroke();
   }
 
-  // Legend
   ctx.textAlign = 'left';
   ctx.fillStyle = '#3b82f6';
   ctx.fillRect(padding.left + 10, padding.top + 4, 12, 3);
   ctx.fillStyle = '#94a3b8';
-  ctx.fillText('飞行高度', padding.left + 26, padding.top + 10);
-  ctx.fillStyle = 'rgba(139,92,46,0.8)';
-  ctx.fillRect(padding.left + 90, padding.top + 2, 12, 8);
+  ctx.fillText('正常航段', padding.left + 26, padding.top + 10);
+
+  ctx.fillStyle = '#f97316';
+  ctx.fillRect(padding.left + 90, padding.top + 4, 12, 3);
   ctx.fillStyle = '#94a3b8';
-  ctx.fillText('地形', padding.left + 106, padding.top + 10);
+  ctx.fillText('高耗电航段', padding.left + 106, padding.top + 10);
+
+  ctx.fillStyle = 'rgba(139,92,46,0.8)';
+  ctx.fillRect(padding.left + 180, padding.top + 2, 12, 8);
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText('地形', padding.left + 196, padding.top + 10);
 }
 
 onMounted(() => nextTick(draw));
 watch(() => store.terrainProfile, draw, { deep: true });
+watch(() => store.flightSegments, draw, { deep: true });
 </script>
 
 <template>

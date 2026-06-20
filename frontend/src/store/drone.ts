@@ -10,6 +10,8 @@ import {
   exportKML,
   mockNoFlyZones,
   mockTerrainData,
+  isLowBattery,
+  getHighConsumptionSegments,
 } from '../utils/pathfinding';
 
 export const useDroneStore = defineStore('drone', () => {
@@ -28,6 +30,8 @@ export const useDroneStore = defineStore('drone', () => {
     batteryCapacity: 5000,
     consumptionRate: 100,
     safeDistance: 30,
+    lowBatteryThreshold: 20,
+    highConsumptionThreshold: 15,
   });
 
   // ─── Actions ──────────────────────────────────────────────────────────────
@@ -79,7 +83,19 @@ export const useDroneStore = defineStore('drone', () => {
       totalDistance: stats.totalDistance,
       estimatedTime: stats.estimatedTime,
       batteryUsage: stats.batteryUsage,
+      remainingBattery: stats.remainingBattery,
+      segments: stats.segments,
     };
+  }
+
+  function setLowBatteryThreshold(value: number) {
+    droneConfig.value.lowBatteryThreshold = Math.max(0, Math.min(100, value));
+    updatePlan();
+  }
+
+  function setHighConsumptionThreshold(value: number) {
+    droneConfig.value.highConsumptionThreshold = Math.max(0, Math.min(100, value));
+    updatePlan();
   }
 
   let simInterval: ReturnType<typeof setInterval> | null = null;
@@ -124,6 +140,30 @@ export const useDroneStore = defineStore('drone', () => {
     return currentPlan.value.batteryUsage;
   });
 
+  const remainingBattery = computed(() => {
+    if (!currentPlan.value) return 100;
+    return currentPlan.value.remainingBattery;
+  });
+
+  const flightSegments = computed(() => {
+    if (!currentPlan.value) return [];
+    return currentPlan.value.segments;
+  });
+
+  const highConsumptionSegments = computed(() => {
+    if (!currentPlan.value) return [];
+    return getHighConsumptionSegments(currentPlan.value.segments);
+  });
+
+  const hasLowBatteryWarning = computed(() => {
+    if (!currentPlan.value) return false;
+    return isLowBattery(currentPlan.value.remainingBattery, droneConfig.value.lowBatteryThreshold);
+  });
+
+  const hasHighConsumptionWarning = computed(() => {
+    return highConsumptionSegments.value.length > 0;
+  });
+
   const terrainProfile = computed(() => {
     if (waypoints.value.length < 2) return [];
     return waypoints.value.map((wp) => {
@@ -159,6 +199,11 @@ export const useDroneStore = defineStore('drone', () => {
     totalDistance,
     estimatedTime,
     batteryPercent,
+    remainingBattery,
+    flightSegments,
+    highConsumptionSegments,
+    hasLowBatteryWarning,
+    hasHighConsumptionWarning,
     terrainProfile,
     addWaypoint,
     removeWaypoint,
@@ -169,5 +214,7 @@ export const useDroneStore = defineStore('drone', () => {
     loadMockData,
     exportPlan,
     updatePlan,
+    setLowBatteryThreshold,
+    setHighConsumptionThreshold,
   };
 });

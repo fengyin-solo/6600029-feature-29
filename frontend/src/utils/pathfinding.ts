@@ -1,4 +1,4 @@
-import type { Waypoint, NoFlyZone, TerrainPoint, FlightPlan, DroneConfig } from '../types';
+import type { Waypoint, NoFlyZone, TerrainPoint, FlightPlan, DroneConfig, FlightSegment, FlightStatsResult } from '../types';
 
 // ─── Haversine distance ─────────────────────────────────────────────────────
 export function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -267,25 +267,61 @@ export function smoothPath(waypoints: Waypoint[], segments = 5): Waypoint[] {
 }
 
 // ─── Flight Statistics ──────────────────────────────────────────────────────
-export function calculateFlightStats(waypoints: Waypoint[], config: DroneConfig) {
+export function calculateFlightStats(waypoints: Waypoint[], config: DroneConfig): FlightStatsResult {
+  const segments: FlightSegment[] = [];
   let totalDistance = 0;
+  let totalBatteryUsage = 0;
+
   for (let i = 1; i < waypoints.length; i++) {
-    totalDistance += haversine(
-      waypoints[i - 1].lat, waypoints[i - 1].lng,
-      waypoints[i].lat, waypoints[i].lng
-    );
+    const wp1 = waypoints[i - 1];
+    const wp2 = waypoints[i];
+    const distance = haversine(wp1.lat, wp1.lng, wp2.lat, wp2.lng);
+    const avgSpeed = (wp1.speed + wp2.speed) / 2 || 1;
+    const estimatedTime = distance / avgSpeed;
+    const flightMinutes = estimatedTime / 60;
+    const batteryUsage = (flightMinutes * config.consumptionRate / config.batteryCapacity) * 100;
+
+    totalDistance += distance;
+    totalBatteryUsage += batteryUsage;
+
+    segments.push({
+      index: i - 1,
+      startWaypoint: wp1,
+      endWaypoint: wp2,
+      distance,
+      estimatedTime,
+      batteryUsage,
+      isHighConsumption: false,
+    });
   }
 
-  const avgSpeed = waypoints.reduce((s, w) => s + w.speed, 0) / (waypoints.length || 1);
-  const estimatedTime = totalDistance / (avgSpeed || 1); // seconds
-  const flightMinutes = estimatedTime / 60;
-  const batteryUsage = (flightMinutes * config.consumptionRate / config.batteryCapacity) * 100;
+  const avgSegmentBattery = segments.length > 0 ? totalBatteryUsage / segments.length : 0;
+  const highThreshold = config.highConsumptionThreshold || 15;
+
+  segments.forEach((seg) => {
+    seg.isHighConsumption = seg.batteryUsage > Math.max(avgSegmentBattery * 1.5, highThreshold);
+  });
+
+  const totalBattery = Math.min(100, totalBatteryUsage);
+  const remainingBattery = Math.max(0, 100 - totalBattery);
+
+  const totalEstimatedTime = segments.reduce((sum, s) => sum + s.estimatedTime, 0);
 
   return {
     totalDistance,
-    estimatedTime,
-    batteryUsage: Math.min(100, batteryUsage),
+    estimatedTime: totalEstimatedTime,
+    batteryUsage: totalBattery,
+    segments,
+    remainingBattery,
   };
+}
+
+export function isLowBattery(remainingBattery: number, threshold: number): boolean {
+  return remainingBattery <= threshold;
+}
+
+export function getHighConsumptionSegments(segments: FlightSegment[]): FlightSegment[] {
+  return segments.filter((s) => s.isHighConsumption);
 }
 
 // ─── Terrain Collision Check ────────────────────────────────────────────────

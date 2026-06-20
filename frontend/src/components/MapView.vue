@@ -8,7 +8,7 @@ const store = useDroneStore();
 const mapContainer = ref<HTMLElement>();
 let map: L.Map | null = null;
 let waypointLayer: L.LayerGroup | null = null;
-let routeLayer: L.Polyline | null = null;
+let routeLayer: L.LayerGroup | null = null;
 let zoneLayer: L.LayerGroup | null = null;
 let droneMarker: L.CircleMarker | null = null;
 
@@ -24,6 +24,7 @@ function initMap() {
 
   waypointLayer = L.layerGroup().addTo(map);
   zoneLayer = L.layerGroup().addTo(map);
+  routeLayer = L.layerGroup().addTo(map);
 
   map.on('click', (e: L.LeafletMouseEvent) => {
     if (addMode.value) {
@@ -81,31 +82,53 @@ function drawWaypoints() {
 }
 
 function drawRoute() {
-  if (routeLayer && map) {
-    map.removeLayer(routeLayer);
-    routeLayer = null;
-  }
-  if (store.waypoints.length < 2 || !map) return;
+  if (!routeLayer || !map) return;
+  routeLayer.clearLayers();
+  if (store.waypoints.length < 2) return;
 
-  const latlngs = store.waypoints.map((w) => [w.lat, w.lng] as [number, number]);
+  const segments = store.flightSegments;
 
-  // Check near obstacles for coloring
-  let hasDanger = false;
-  for (const wp of store.waypoints) {
-    for (const zone of store.noFlyZones) {
-      const d = Math.sqrt(
-        (wp.lat - zone.center[0]) ** 2 + (wp.lng - zone.center[1]) ** 2
-      ) * 111000;
-      if (d < zone.radius * 1.5) hasDanger = true;
+  if (segments.length === 0) {
+    const latlngs = store.waypoints.map((w) => [w.lat, w.lng] as [number, number]);
+    let hasDanger = false;
+    for (const wp of store.waypoints) {
+      for (const zone of store.noFlyZones) {
+        const d = Math.sqrt(
+          (wp.lat - zone.center[0]) ** 2 + (wp.lng - zone.center[1]) ** 2
+        ) * 111000;
+        if (d < zone.radius * 1.5) hasDanger = true;
+      }
     }
+    L.polyline(latlngs, {
+      color: hasDanger ? '#ef4444' : '#22c55e',
+      weight: 3,
+      opacity: 0.8,
+      dashArray: hasDanger ? '8,4' : undefined,
+    }).addTo(routeLayer);
+    return;
   }
 
-  routeLayer = L.polyline(latlngs, {
-    color: hasDanger ? '#ef4444' : '#22c55e',
-    weight: 3,
-    opacity: 0.8,
-    dashArray: hasDanger ? '8,4' : undefined,
-  }).addTo(map);
+  for (const seg of segments) {
+    const latlngs: [number, number][] = [
+      [seg.startWaypoint.lat, seg.startWaypoint.lng],
+      [seg.endWaypoint.lat, seg.endWaypoint.lng],
+    ];
+
+    const isHigh = seg.isHighConsumption;
+    const color = isHigh ? '#f97316' : '#22c55e';
+
+    L.polyline(latlngs, {
+      color,
+      weight: isHigh ? 5 : 3,
+      opacity: isHigh ? 0.95 : 0.8,
+      dashArray: isHigh ? undefined : undefined,
+    })
+      .bindTooltip(
+        `航段 ${seg.index + 1}<br>距离: ${(seg.distance / 1000).toFixed(2)}km<br>耗电: ${seg.batteryUsage.toFixed(2)}%${isHigh ? '<br><b style="color:#f97316">⚠ 高耗电</b>' : ''}`,
+        { sticky: true, direction: 'top', className: 'segment-tooltip' }
+      )
+      .addTo(routeLayer);
+  }
 }
 
 function drawSimDrone() {
@@ -136,6 +159,10 @@ watch(() => store.waypoints.length, () => {
   drawWaypoints();
   drawRoute();
 });
+
+watch(() => store.flightSegments, () => {
+  drawRoute();
+}, { deep: true });
 
 watch(() => store.noFlyZones.length, drawNoFlyZones);
 watch(() => store.simProgress, drawSimDrone);
@@ -198,5 +225,15 @@ function handlePlanRoute() {
   font-size: 10px;
   padding: 1px 4px;
   border-radius: 4px;
+}
+:deep(.segment-tooltip) {
+  background: rgba(15, 23, 42, 0.95);
+  color: #e2e8f0;
+  border: 1px solid #475569;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  line-height: 1.5;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
 }
 </style>
